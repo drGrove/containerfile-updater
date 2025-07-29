@@ -1,0 +1,61 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "enabledManagers": [
+    "dockerfile",
+    "github-actions"
+  ],
+  "dockerfile": {
+    "fileMatch": ["(^|/)Containerfile$", "(^|/)Dockerfile$"]
+  },
+  "github-actions": {
+    "fileMatch": [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+  },
+  "packageRules": [
+    {
+      "matchManagers": ["dockerfile"],
+      "matchFileNames": ["Containerfile"],
+      "groupName": "Containerfile dependencies",
+      "commitMessageTopic": "Containerfile deps",
+      "pinDigests": true
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions",
+      "commitMessageTopic": "GitHub Actions"
+    },
+    {
+      "matchPackageNames": ["actions/checkout", "actions/cache", "actions/upload-artifact"],
+      "groupName": "GitHub Actions - Core",
+      "schedule": ["before 6am"]
+    },
+    {
+      "matchPackageNames": ["docker/login-action", "docker/metadata-action", "docker/setup-buildx-action", "docker/build-push-action"],
+      "groupName": "Docker Actions",
+      "schedule": ["before 6am"]
+    },
+    {
+      "matchPackageNames": ["actions/attest-build-provenance"],
+      "groupName": "Attestation Actions",
+      "schedule": ["before 6am"]
+    }
+  ],
+  "schedule": ["before 6am"],
+  "timezone": "America/Los_Angeles",
+  "labels": ["dependencies"],
+  "assigneesFromCodeOwners": true,
+  "reviewersFromCodeOwners": true,
+  "semanticCommits": "enabled",
+  "commitMessagePrefix": "chore:",
+  "prTitle": "{{semanticPrefix}}{{#if isPinDigest}}pin{{else}}update{{/if}} {{depName}}{{#if isMajor}} (major){{/if}}{{#if isMinor}} (minor){{/if}}{{#if isPatch}} (patch){{/if}}",
+  "prBodyTemplate": "This PR updates {{depName}} from `{{currentVersion}}` to `{{newVersion}}`.\n\n{{#if hasReleaseNotes}}### Release Notes\n{{{releaseNotes}}}{{/if}}\n\n---\n\n- [ ] If you want to rebase/retry this PR, check this box",
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "addLabels": ["security"]
+  },
+  "dependencyDashboard": true,
+  "dependencyDashboardTitle": "Dependency Dashboard",
+  "dependencyDashboardHeader": "This issue lists Renovate updates and detected dependencies. Read the [Dependency Dashboard](https://docs.renovatebot.com/key-concepts/dashboard/) docs to learn more."
+}

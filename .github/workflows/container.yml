@@ -1,0 +1,91 @@
+name: Build and Publish Container
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4.2.2
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3.4.0
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5.7.0
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=ref,event=tag
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+        annotations: |
+          org.opencontainers.image.licenses=AGPL-3.0
+          org.opencontainers.image.revision={{sha}}
+          org.opencontainers.image.source=https://github.com/drGrove/containerfile-updater
+          org.opencontainers.image.created={{commit_date 'YYYY-MM-DDTHH:mm:ss.SSS[Z]'}}
+      env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
+
+    - name: Convert timestamp to Unix format
+      id: timestamp
+      run: |
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          TIMESTAMP="${{ github.event.pull_request.head.repo.pushed_at }}"
+        else
+          TIMESTAMP="${{ github.event.head_commit.timestamp }}"
+        fi
+        UNIX_TIMESTAMP=$(date -d "$TIMESTAMP" +%s)
+        echo "unix=$UNIX_TIMESTAMP" >> $GITHUB_OUTPUT
+        echo "iso=$TIMESTAMP" >> $GITHUB_OUTPUT
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3.11.1
+
+    - name: Build and push container image
+      id: push
+      uses: docker/build-push-action@v6.18.0
+      env:
+        SOURCE_DATE_EPOCH: ${{ steps.timestamp.outputs.unix }}
+      with:
+        context: .
+        file: ./Containerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        annotations: ${{ steps.meta.outputs.annotations }}
+        build-args: |
+          SOURCE_DATE_EPOCH=${{ steps.timestamp.outputs.unix }}
+        outputs: |
+          type=image,push=true,rewrite-timestamp=true,force-compression=true
+
+    - name: Generate artifact attestation
+      uses: actions/attest-build-provenance@v2.4.0
+      with:
+        subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME}}
+        subject-digest: ${{ steps.push.outputs.digest }}
+        push-to-registry: true

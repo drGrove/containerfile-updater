@@ -1,0 +1,23 @@
+FROM stagex/core-py-setuptools@sha256:3558195868ec830242e047b22729b8a849336899dc105957843c9c4e75baacf0 AS py-setuptools
+FROM stagex/pallet-python@sha256:4e42661b82e74f4b8a8b9de0689ac8e77297d52b438ef15d494f6bd7039a1fac AS pallet-python
+FROM stagex/core-filesystem@sha256:2aaaea601e1725a8292c4c28e723db5761d892b869556f9b05c0983ba11fe30e AS core-filesystem
+
+# py-six
+FROM scratch AS build-py-six
+COPY --from=pallet-python . /
+COPY --from=py-setuptools . /
+ADD \
+  --checksum=sha256:1e61c37477a1626458e36f7b1d82aa5c9b094fa4802892072e49de9c60c4c926 \
+  https://files.pythonhosted.org/packages/source/s/six/six-1.16.0.tar.gz \
+  /
+RUN tar zxvf /six-1.16.0.tar.gz
+WORKDIR /six-1.16.0/
+RUN --network=none <<-EOF
+  set -eu
+  python setup.py install --root /rootfs --optimize=1
+  install -Dm644 LICENSE -t /rootfs/usr/share/licenses/py-six/
+  find /rootfs | grep -E "(/__pycache__$|\.pyc$|\.pyo$)" | xargs rm -rf
+EOF
+
+FROM core-filesystem AS py-six
+COPY --from=build-py-six /rootfs /

@@ -1,0 +1,40 @@
+name: Build and Test
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    container:
+      image: stagex/pallet-go@sha256:1f738709d5153f37a19193b1ee85ccbf3b52a956bd4abd0aedf9be34caab6dd4
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4.2.2
+
+      - name: Download Dependencies
+        run: go mod download
+
+      - name: Verify Dependencies
+        run: go mod verify
+
+      - name: Run tests
+        run: go test -v ./...
+
+      - name: Build
+        env:
+          SOURCE_DATE_EPOCH: ${{ github.event.head_commit.timestamp || github.event.pull_request.head.repo.pushed_at }}
+        run: go build -v -o containerfile-updater ./...
+
+      - name: Digest
+        run: sha256sum containerfile-updater
