@@ -15,9 +15,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    container:
-      image: stagex/pallet-go@sha256:1f738709d5153f37a19193b1ee85ccbf3b52a956bd4abd0aedf9be34caab6dd4
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4.2.2
