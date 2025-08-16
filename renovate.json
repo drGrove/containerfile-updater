@@ -10,7 +10,8 @@
     "github-actions"
   ],
   "dockerfile": {
-    "fileMatch": ["(^|/)Containerfile$", "(^|/)Dockerfile$"]
+    "fileMatch": ["(^|/)Containerfile$", "(^|/)Dockerfile$"],
+    "pinDigests": true
   },
   "github-actions": {
     "fileMatch": [".github/workflows/*.yml", ".github/workflows/*.yaml"]
@@ -22,6 +23,12 @@
       "groupName": "Containerfile dependencies",
       "commitMessageTopic": "Containerfile deps",
       "pinDigests": true
+    },
+    {
+      "matchManagers": ["dockerfile"],
+      "matchPackagePatterns": ["^stagex/"],
+      "pinDigests": true,
+      "versioning": "docker"
     },
     {
       "matchManagers": ["github-actions"],
@@ -42,6 +49,16 @@
       "matchPackageNames": ["actions/attest-build-provenance"],
       "groupName": "Attestation Actions",
       "schedule": ["before 6am"]
+    }
+  ],
+  "regexManagers": [
+    {
+      "fileMatch": ["(^|/)Containerfile$"],
+      "matchStrings": [
+        "FROM\\s+(?<depName>stagex/[^\\s]+?)(?::(?<currentValue>[^\\s@]+?))?(?:@(?<currentDigest>sha256:[a-f0-9]+))?\\s+AS\\s+\\w+"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
     }
   ],
   "schedule": ["before 6am"],
