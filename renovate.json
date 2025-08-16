@@ -69,8 +69,8 @@
   "assigneesFromCodeOwners": true,
   "reviewersFromCodeOwners": true,
   "semanticCommits": "enabled",
-  "commitMessagePrefix": "chore:",
-  "prTitle": "{{semanticPrefix}}{{#if isPinDigest}}pin{{else}}update{{/if}} {{depName}}{{#if isMajor}} (major){{/if}}{{#if isMinor}} (minor){{/if}}{{#if isPatch}} (patch){{/if}}",
+  "commitMessageTopic": "{{#if isPinDigest}}pin{{else}}update{{/if}} {{depName}}",
+  "commitMessageExtra": "{{#if isMajor}} (major){{/if}}{{#if isMinor}} (minor){{/if}}{{#if isPatch}} (patch){{/if}}",
   "prBodyTemplate": "This PR updates {{depName}} from `{{currentVersion}}` to `{{newVersion}}`.\n\n{{#if hasReleaseNotes}}### Release Notes\n{{{releaseNotes}}}{{/if}}\n\n---\n\n- [ ] If you want to rebase/retry this PR, check this box",
   "vulnerabilityAlerts": {
     "enabled": true,
