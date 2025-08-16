@@ -26,9 +26,9 @@
     },
     {
       "matchManagers": ["dockerfile"],
-      "matchPackagePatterns": ["^stagex/"],
       "pinDigests": true,
-      "versioning": "docker"
+      "versioning": "docker",
+      "followTag": "latest"
     },
     {
       "matchManagers": ["github-actions"],
@@ -53,12 +53,14 @@
   ],
   "regexManagers": [
     {
-      "fileMatch": ["(^|/)Containerfile$"],
+      "fileMatch": ["(^|/)Containerfile$", "(^|/)Dockerfile$"],
       "matchStrings": [
-        "FROM\\s+(?<depName>stagex/[^\\s]+?)(?::(?<currentValue>[^\\s@]+?))?(?:@(?<currentDigest>sha256:[a-f0-9]+))?\\s+AS\\s+\\w+"
+        "FROM\\s+(?<depName>[^\\s@]+)@(?<currentDigest>sha256:[a-f0-9]+)\\s+AS\\s+\\w+",
+        "FROM\\s+(?<depName>[^\\s@]+)@(?<currentDigest>sha256:[a-f0-9]+)(?:\\s|$)"
       ],
       "datasourceTemplate": "docker",
-      "versioningTemplate": "docker"
+      "autoReplaceStringTemplate": "FROM {{{depName}}}:{{#if newValue}}{{{newValue}}}{{else}}latest{{/if}}@{{{newDigest}}}",
+      "currentValueTemplate": "latest"
     }
   ],
   "schedule": ["before 6am"],
