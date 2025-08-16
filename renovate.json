@@ -55,12 +55,12 @@
     {
       "fileMatch": ["(^|/)Containerfile$", "(^|/)Dockerfile$"],
       "matchStrings": [
-        "FROM\\s+(?<depName>[^\\s@]+)@(?<currentDigest>sha256:[a-f0-9]+)\\s+AS\\s+\\w+",
+        "FROM\\s+(?<depName>[^\\s@]+)@(?<currentDigest>sha256:[a-f0-9]+)\\s+AS\\s+(?<stage>\\w+)",
         "FROM\\s+(?<depName>[^\\s@]+)@(?<currentDigest>sha256:[a-f0-9]+)(?:\\s|$)"
       ],
       "datasourceTemplate": "docker",
-      "autoReplaceStringTemplate": "FROM {{{depName}}}:{{#if newValue}}{{{newValue}}}{{else}}latest{{/if}}@{{{newDigest}}}",
-      "currentValueTemplate": "latest"
+      "currentValueTemplate": "latest",
+      "autoReplaceStringTemplate": "FROM {{{depName}}}:{{#if newValue}}{{{newValue}}}{{else}}latest{{/if}}@{{{newDigest}}}{{#if stage}} AS {{{stage}}}{{/if}}"
     }
   ],
   "schedule": ["before 6am"],
