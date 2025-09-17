@@ -38,13 +38,12 @@ jobs:
 
     - name: Build image
       run: |
-        export OUT_DIR="out-build-${{ matrix.build-id }}"
-        make image
+        make image OUT_DIR="out-build-${{ matrix.build-id }}"
 
     - name: Generate image digests
       run: |
-        export OUT_DIR="out-build-${{ matrix.build-id }}"
-        make image-digests > digests-${{ matrix.build-id }}.txt
+        OUT_DIR="out-build-${{ matrix.build-id }}" 
+        make image-digests OUT_DIR="${OUT_DIR}" > digests-${{ matrix.build-id }}.txt
         echo "Build ${{ matrix.build-id }} digests:"
         cat digests-${{ matrix.build-id }}.txt
 
@@ -73,16 +72,13 @@ jobs:
     - name: Download build artifacts
       uses: actions/download-artifact@v4
       with:
-        pattern: build-*
-        merge-multiple: false
+        pattern: digests-*
+        merge-multiple: true 
 
     - name: Compare build outputs
       id: compare
       run: |
         echo "Comparing digests from both builds..."
-
-        cat build-1/digests-1.txt > digests-1.txt
-        cat build-2/digests-2.txt > digests-2.txt
 
         echo "Build 1 digests:"
         cat digests-1.txt
