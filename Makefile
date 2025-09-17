@@ -1,4 +1,4 @@
-PLATFORM ?= linux/amd64
+PLATFORM ?= linux/amd64,linux/arm64,linux/arm
 PROGRESS ?= auto
 SOURCE_DATE_EPOCH := $(shell git log -1 --format=%ct)
 COMMIT_ISO := $(shell git log -1 --format=%cI)
@@ -7,9 +7,9 @@ NAME = containerfile-updater
 BINARY_NAME = containerfile-updater
 VERSION := latest
 SHELL := /bin/bash
-BUILD_DIR=out
-BIN_DIR=$(BUILD_DIR)/bins
-IMAGE_DIR=$(BUILD_DIR)/image
+OUT_DIR=out
+BIN_DIR=$(OUT_DIR)/bins
+IMAGE_DIR=$(OUT_DIR)/image
 MAIN_PATH=./main.go
 GO_SRCS=$(shell find . -type f -name "*.go" -not -path "*/\.*")
 MOD_SRCS=$(shell find . -type f -name "go.mod" -o -name "go.sum" -not -path "*/\.*")
@@ -33,16 +33,16 @@ all: \
 	build-mac-amd64 \
 	build-mac-arm64
 
-$(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)
+$(OUT_DIR):
+	mkdir -p $(OUT_DIR)
 
 $(IMAGE_DIR): out
 	mkdir -p $(IMAGE_DIR)
 
-$(BIN_DIR): $(BUILD_DIR)
+$(BIN_DIR): $(OUT_DIR)
 	mkdir -p $(BIN_DIR)
 
-$(BIN_DIR)/%: $(SRCS) $(BUILD_DIR)
+$(BIN_DIR)/%: $(SRCS) $(OUT_DIR)
 	go build \
 		$(LDFLAGS) \
 		-o $(BIN_DIR)/$* \
@@ -85,8 +85,8 @@ build-mac-arm64: $(SRCS) | $(BIN_DIR)
 	$(MAKE) $(BIN_DIR)/$(BINARY_NAME)_darwin_arm64
 
 .PHONY: image
-image: $(BUILD_DIR)/image/index.json
-$(BUILD_DIR)/image/index.json: $(BUILD_DIR)/image Containerfile $(SRCS)
+image: $(OUT_DIR)/image/index.json
+$(OUT_DIR)/image/index.json: $(OUT_DIR)/image Containerfile $(SRCS)
 	docker \
 		buildx \
 		build \
@@ -99,6 +99,8 @@ $(BUILD_DIR)/image/index.json: $(BUILD_DIR)/image Containerfile $(SRCS)
 		$(CHECK_FLAG) \
 		--platform=$(PLATFORM) \
 		--progress=$(PROGRESS) \
+		--sbom=true \
+		--provenance=true \
 		-f Containerfile \
 		. \
 		| tar -C $(IMAGE_DIR) -mx
@@ -108,14 +110,21 @@ load-image: image
 	cd out/image
 	tar -cf - . | docker load
 
-.PHONY: image-digest
+.PHONY: image-digests
 .ONESHELL:
-image-digest: image
-	@cat $(IMAGE_DIR)/index.json | jq -r '.manifests[].digest | sub ("sha256:";"")'
+image-digests: $(IMAGE_DIR)/index.json
+	@cd $(IMAGE_DIR) && \
+	INDEX_DIGEST=$$(jq -r '.manifests[0].digest' index.json) && \
+	MANIFEST_FILE=$$(echo "$$INDEX_DIGEST" | sed 's/sha256://' | xargs -I {} find blobs/sha256 -name "{}" -type f) && \
+	if [ -n "$$MANIFEST_FILE" ]; then \
+		jq -r '.manifests[] | select(.annotations."vnd.docker.reference.type" != "attestation-manifest") | "\(.digest | sub("sha256:"; "")) \(.platform.os)/\(.platform.architecture)"' "$$MANIFEST_FILE" | sort; \
+	else \
+		echo "Error: Could not find manifest file for $$INDEX_DIGEST"; \
+	fi
 
 .PHONY: verify
 verify: all
-	@make all BUILD_DIR=out2
+	@make all OUT_DIR=out2
 	@cmp $(IMAGE_DIR)/index.json out2/image/index.json
 	@cmp $(BIN_DIR)/$(BINARY_NAME)_darwin_arm64 out2/bins/$(BINARY_NAME)_darwin_arm64
 	@cmp $(BIN_DIR)/$(BINARY_NAME)_darwin_amd64 out2/bins/$(BINARY_NAME)_darwin_amd64

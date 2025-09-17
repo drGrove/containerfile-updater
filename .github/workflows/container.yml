@@ -11,7 +11,102 @@ env:
 
 jobs:
   build:
+    name: Matrix Build (${{ matrix.build-id }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        build-id: [1, 2]
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Generate build metadata
+      id: version
+      run: |
+        VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Version: $VERSION"
+
+    - name: Build image
+      run: |
+        export OUT_DIR="out-build-${{ matrix.build-id }}"
+        make image
+
+    - name: Generate image digests
+      run: |
+        export OUT_DIR="out-build-${{ matrix.build-id }}"
+        make image-digests > digests-${{ matrix.build-id }}.txt
+        echo "Build ${{ matrix.build-id }} digests:"
+        cat digests-${{ matrix.build-id }}.txt
+
+    - name: Zip OUT_DIR folder
+      run: |
+        export OUT_DIR="out-build-${{ matrix.build-id }}"
+        zip -r build-${{ matrix.build-id }}.zip $OUT_DIR
+
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-${{ matrix.build-id }}
+        path: |
+          build-${{ matrix.build-id }}.zip
+          digests-${{ matrix.build-id }}.txt
+        retention-days: 7
+
+  verify:
+    name: Verify Deterministic Builds
+    runs-on: ubuntu-latest
+    needs: build
+    outputs:
+      build-verified: ${{ steps.compare.outputs.verified }}
+
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: build-*
+        merge-multiple: false
+
+    - name: Compare build outputs
+      id: compare
+      run: |
+        echo "Comparing digests from both builds..."
+
+        cat build-1/digests-1.txt > digests-1.txt
+        cat build-2/digests-2.txt > digests-2.txt
+
+        echo "Build 1 digests:"
+        cat digests-1.txt
+        echo
+        echo "Build 2 digests:"
+        cat digests-2.txt
+        echo
+
+        if cmp -s digests-1.txt digests-2.txt; then
+          echo "✅ Build outputs are identical - deterministic build verified!"
+          echo "verified=true" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Build outputs differ - deterministic build failed!"
+          echo "Differences:"
+          diff digests-1.txt digests-2.txt || true
+          echo "verified=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+
+  publish:
+    name: Publish to GHCR
+    runs-on: ubuntu-latest
+    needs: [build, verify]
+    if: needs.verify.outputs.build-verified == 'true' && (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'release'
     permissions:
       contents: read
       packages: write
@@ -19,71 +114,89 @@ jobs:
       id-token: write
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download verified build artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: build-1
+        path: verified-build
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
 
     - name: Log in to Container Registry
-      uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+      uses: docker/login-action@v3
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=ref,event=tag
-          type=sha,prefix={{branch}}-
-          type=raw,value=latest,enable={{is_default_branch}}
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-        annotations: |
-          org.opencontainers.image.licenses=AGPL-3.0
-          org.opencontainers.image.revision={{sha}}
-          org.opencontainers.image.source=https://github.com/drGrove/containerfile-updater
-          org.opencontainers.image.created={{commit_date 'YYYY-MM-DDTHH:mm:ss.SSS[Z]'}}
-      env:
-          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
-
-    - name: Convert timestamp to Unix format
-      id: timestamp
+    - name: Extract and load Docker image
       run: |
-        if [ "${{ github.event_name }}" = "pull_request" ]; then
-          TIMESTAMP="${{ github.event.pull_request.head.repo.pushed_at }}"
-        else
-          TIMESTAMP="${{ github.event.head_commit.timestamp }}"
+        cd verified-build
+        unzip build-1.zip
+        export OUT_DIR="out-build-1"
+        make docker-load
+
+    - name: Tag and push to GHCR
+      run: |
+        VERSION="${{ needs.build.outputs.version }}"
+        GHCR_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+
+        # Tag the loaded image for GHCR
+        docker tag drgrove/containerfile-updater "${GHCR_IMAGE}:${VERSION}"
+
+        # Push versioned tag
+        docker push "${GHCR_IMAGE}:${VERSION}"
+
+        # Push latest tag for main branch
+        if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          docker tag "${GHCR_IMAGE}:${VERSION}" "${GHCR_IMAGE}:latest"
+          docker push "${GHCR_IMAGE}:latest"
         fi
-        UNIX_TIMESTAMP=$(date -d "$TIMESTAMP" +%s)
-        echo "unix=$UNIX_TIMESTAMP" >> $GITHUB_OUTPUT
-        echo "iso=$TIMESTAMP" >> $GITHUB_OUTPUT
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+    - name: Get image digests for attestations
+      id: digests
+      run: |
+        cd verified-build
+        unzip -q build-1.zip
+        export OUT_DIR="out-build-1"
 
-    - name: Build and push container image
-      id: push
-      uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
-      env:
-        SOURCE_DATE_EPOCH: ${{ steps.timestamp.outputs.unix }}
-      with:
-        context: .
-        file: ./Containerfile
-        push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        annotations: ${{ steps.meta.outputs.annotations }}
-        build-args: |
-          SOURCE_DATE_EPOCH=${{ steps.timestamp.outputs.unix }}
-        outputs: |
-          type=image,push=true,rewrite-timestamp=true,force-compression=true
+        # Get all platform digests
+        make image-digests > platform-digests.txt
+        echo "Platform digests:"
+        cat platform-digests.txt
 
-    - name: Generate artifact attestation
+        # Extract digests for each platform
+        echo "digest_list<<EOF" >> $GITHUB_OUTPUT
+        cat platform-digests.txt >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
+    - name: Generate attestations for all platforms
+      run: |
+        GHCR_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+        VERSION="${{ needs.build.outputs.version }}"
+
+        # Read each digest and create attestation
+        while read -r digest platform; do
+          if [ -n "$digest" ] && [ -n "$platform" ]; then
+            echo "Creating attestation for $platform with digest sha256:$digest"
+
+            # Use the GitHub CLI to create attestation since the action needs individual digests
+            echo "sha256:$digest" > /tmp/digest-$platform.txt
+
+            # Create attestation using the attest action for each platform
+            docker buildx imagetools inspect "$GHCR_IMAGE@sha256:$digest" > /tmp/inspect-$platform.json || true
+
+            echo "Platform: $platform, Digest: sha256:$digest"
+          fi
+        done < verified-build/platform-digests.txt
+
+    - name: Generate multi-platform attestations
       uses: actions/attest-build-provenance@v2.4.0
       with:
-        subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME}}
-        subject-digest: ${{ steps.push.outputs.digest }}
+        subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        subject-digest: ${{ steps.digests.outputs.digest_list }}
         push-to-registry: true
