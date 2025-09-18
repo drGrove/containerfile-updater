@@ -7,7 +7,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  GITHUB_REPOSITORY: ${{ github.repository }}
 
 jobs:
   build:
@@ -26,39 +26,49 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Set up Docker Buildx
+    - name: Set Image name
+      run: |
+        echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
+
+    - name: Setup Docker
+      uses: docker/setup-docker-action@v4
+      with:
+        daemon-config: |
+          {
+            "debug": true,
+            "features": {
+              "containerd-snapshotter": true
+            }
+          }
+
+    - name: Setup Docker Buildx
       uses: docker/setup-buildx-action@v3
 
     - name: Generate build metadata
       id: version
       run: |
-        VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        version=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+        echo "VERSION=${version}" >> ${GITHUB_ENV}
+        echo "OUT_DIR=build-${{ matrix.build-id }}" >> ${GITHUB_ENV}
+        echo "version=${version}" >> ${GITHUB_OUTPUT}
         echo "Version: $VERSION"
+
 
     - name: Build image
       run: |
-        make image OUT_DIR="out-build-${{ matrix.build-id }}"
+        make image
 
     - name: Generate image digests
       run: |
-        OUT_DIR="out-build-${{ matrix.build-id }}" 
-        make image-digests OUT_DIR="${OUT_DIR}" > digests-${{ matrix.build-id }}.txt
+        make image-digests
         echo "Build ${{ matrix.build-id }} digests:"
-        cat digests-${{ matrix.build-id }}.txt
-
-    - name: Zip OUT_DIR folder
-      run: |
-        export OUT_DIR="out-build-${{ matrix.build-id }}"
-        zip -r build-${{ matrix.build-id }}.zip $OUT_DIR
+        cat "${OUT_DIR}/digests.txt"
 
     - name: Upload build artifact
       uses: actions/upload-artifact@v4
       with:
         name: build-${{ matrix.build-id }}
-        path: |
-          build-${{ matrix.build-id }}.zip
-          digests-${{ matrix.build-id }}.txt
+        path: "build-${{ matrix.build-id }}"
         retention-days: 7
 
   verify:
@@ -72,28 +82,28 @@ jobs:
     - name: Download build artifacts
       uses: actions/download-artifact@v4
       with:
-        pattern: digests-*
-        merge-multiple: true 
+        pattern: build-*
+        merge-multiple: false
 
-    - name: Compare build outputs
+    - name: Compare Images
       id: compare
       run: |
         echo "Comparing digests from both builds..."
 
         echo "Build 1 digests:"
-        cat digests-1.txt
+        cat build-1/digests.txt
         echo
         echo "Build 2 digests:"
-        cat digests-2.txt
+        cat build-2/digests.txt
         echo
 
-        if cmp -s digests-1.txt digests-2.txt; then
+        if cmp -s build-1/digests.txt build-2/digests.txt; then
           echo "✅ Build outputs are identical - deterministic build verified!"
           echo "verified=true" >> $GITHUB_OUTPUT
         else
           echo "❌ Build outputs differ - deterministic build failed!"
           echo "Differences:"
-          diff digests-1.txt digests-2.txt || true
+          diff build-1/digests.txt build-2/digests.txt || true
           echo "verified=false" >> $GITHUB_OUTPUT
           exit 1
         fi
@@ -110,14 +120,30 @@ jobs:
       id-token: write
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - name: Set Image name
+      run: |
+        image_name=${GITHUB_REPOSITORY,,}
+        echo "IMAGE_NAME=${image_name}" >> ${GITHUB_ENV}
+        echo "GHCR_IMAGE=${REGISTRY}/${image_name}" >> ${GITHUB_ENV}
+        echo "VERSION=${{ needs.build.outputs.version }}" >> ${GITHUB_ENV}
 
     - name: Download verified build artifact
+      id: download
       uses: actions/download-artifact@v4
       with:
         name: build-1
         path: verified-build
+
+    - name: Setup Docker
+      uses: docker/setup-docker-action@v4
+      with:
+        daemon-config: |
+          {
+            "debug": true,
+            "features": {
+              "containerd-snapshotter": true
+            }
+          }
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -129,70 +155,36 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Extract and load Docker image
+    - name: Show verified build tree
       run: |
-        cd verified-build
-        unzip build-1.zip
-        export OUT_DIR="out-build-1"
-        make docker-load
+        tree verified-build
+
+    - name: Load Verified image
+      run: |
+        tar -C verified-build/image -cf - . | docker load
 
     - name: Tag and push to GHCR
       run: |
-        VERSION="${{ needs.build.outputs.version }}"
-        GHCR_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
-
         # Tag the loaded image for GHCR
-        docker tag drgrove/containerfile-updater "${GHCR_IMAGE}:${VERSION}"
+        docker tag "${GHCR_IMAGE}" "${GHCR_IMAGE}:${VERSION}"
 
         # Push versioned tag
         docker push "${GHCR_IMAGE}:${VERSION}"
 
-        # Push latest tag for main branch
+        # Push latest tag for main branch 
         if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-          docker tag "${GHCR_IMAGE}:${VERSION}" "${GHCR_IMAGE}:latest"
-          docker push "${GHCR_IMAGE}:latest"
+          docker push "${GHCR_IMAGE}"
         fi
 
-    - name: Get image digests for attestations
-      id: digests
+    - name: Get attestation metadata
+      id: attestation_metadata
       run: |
-        cd verified-build
-        unzip -q build-1.zip
-        export OUT_DIR="out-build-1"
-
-        # Get all platform digests
-        make image-digests > platform-digests.txt
-        echo "Platform digests:"
-        cat platform-digests.txt
-
-        # Extract digests for each platform
-        echo "digest_list<<EOF" >> $GITHUB_OUTPUT
-        cat platform-digests.txt >> $GITHUB_OUTPUT
-        echo "EOF" >> $GITHUB_OUTPUT
-
-    - name: Generate attestations for all platforms
-      run: |
-        GHCR_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
-        VERSION="${{ needs.build.outputs.version }}"
-
-        # Read each digest and create attestation
-        while read -r digest platform; do
-          if [ -n "$digest" ] && [ -n "$platform" ]; then
-            echo "Creating attestation for $platform with digest sha256:$digest"
-
-            # Use the GitHub CLI to create attestation since the action needs individual digests
-            echo "sha256:$digest" > /tmp/digest-$platform.txt
-
-            # Create attestation using the attest action for each platform
-            docker buildx imagetools inspect "$GHCR_IMAGE@sha256:$digest" > /tmp/inspect-$platform.json || true
-
-            echo "Platform: $platform, Digest: sha256:$digest"
-          fi
-        done < verified-build/platform-digests.txt
+        echo "digest=$(jq -r '.manifests[0].digest' verified-build/image/index.json)" >> $GITHUB_OUTPUT
+        echo "provenance-subject=${GHCR_IMAGE}" >> $GITHUB_OUTPUT
 
     - name: Generate multi-platform attestations
       uses: actions/attest-build-provenance@v2.4.0
       with:
-        subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        subject-digest: ${{ steps.digests.outputs.digest_list }}
+        subject-name: ${{ steps.attestation_metadata.outputs.provenance-subject }}
+        subject-digest: ${{ steps.attestation_metadata.outputs.digest }}
         push-to-registry: true

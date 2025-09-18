@@ -3,13 +3,13 @@ PROGRESS ?= auto
 SOURCE_DATE_EPOCH := $(shell git log -1 --format=%ct)
 COMMIT_ISO := $(shell git log -1 --format=%cI)
 REGISTRY ?= drgrove
-NAME = containerfile-updater
+IMAGE_NAME ?= containerfile-updater
 BINARY_NAME = containerfile-updater
 VERSION := latest
 SHELL := /bin/bash
-OUT_DIR=out
-BIN_DIR=$(OUT_DIR)/bins
-IMAGE_DIR=$(OUT_DIR)/image
+OUT_DIR ?= out
+BIN_DIR ?= $(OUT_DIR)/bins
+IMAGE_DIR ?= $(OUT_DIR)/image
 MAIN_PATH=./main.go
 GO_SRCS=$(shell find . -type f -name "*.go" -not -path "*/\.*")
 MOD_SRCS=$(shell find . -type f -name "go.mod" -o -name "go.sum" -not -path "*/\.*")
@@ -36,7 +36,7 @@ all: \
 $(OUT_DIR):
 	@mkdir -p $(OUT_DIR)
 
-$(IMAGE_DIR): out
+$(IMAGE_DIR): $(OUT_DIR) 
 	@mkdir -p $(IMAGE_DIR)
 
 $(BIN_DIR): $(OUT_DIR)
@@ -91,9 +91,9 @@ $(OUT_DIR)/image/index.json: Containerfile $(IMAGE_DIR) $(SRCS)
 		buildx \
 		build \
 		--ulimit nofile=2048:16384 \
-		--tag $(REGISTRY)/$(NAME):$(VERSION) \
+		--tag $(REGISTRY)/$(IMAGE_NAME):$(VERSION) \
 		--output \
-			name=$(NAME),type=oci,rewrite-timestamp=true,force-compression=true,annotation.org.opencontainers.licenses=$(LICENSE_CODE),annotation.org.opencontainers.image.revision=$(shell git rev-list HEAD -1 .),annotation.org.opencontainers.source=$(SOURCE_URL),annotation.org.opencontainers.image.created=$(COMMIT_ISO),tar=true,dest=- \
+			name=$(IMAGE_NAME),type=oci,rewrite-timestamp=true,force-compression=true,annotation.org.opencontainers.licenses=$(LICENSE_CODE),annotation.org.opencontainers.image.revision=$(shell git rev-list HEAD -1 .),annotation.org.opencontainers.source=$(SOURCE_URL),annotation.org.opencontainers.image.created=$(COMMIT_ISO),tar=true,dest=- \
 		$(EXTRA_ARGS) \
 		$(NOCACHE_FLAG) \
 		$(CHECK_FLAG) \
@@ -107,8 +107,7 @@ $(OUT_DIR)/image/index.json: Containerfile $(IMAGE_DIR) $(SRCS)
 
 .PHONY: load-image
 load-image: image
-	cd out/image
-	tar -cf - . | docker load
+	tar -C $(IMAGE_DIR) -cf - . | docker load
 
 .PHONY: image-digests
 .ONESHELL:
