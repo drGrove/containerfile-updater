@@ -34,13 +34,13 @@ all: \
 	build-mac-arm64
 
 $(OUT_DIR):
-	mkdir -p $(OUT_DIR)
+	@mkdir -p $(OUT_DIR)
 
 $(IMAGE_DIR): out
-	mkdir -p $(IMAGE_DIR)
+	@mkdir -p $(IMAGE_DIR)
 
 $(BIN_DIR): $(OUT_DIR)
-	mkdir -p $(BIN_DIR)
+	@mkdir -p $(BIN_DIR)
 
 $(BIN_DIR)/%: $(SRCS) $(OUT_DIR)
 	go build \
@@ -85,8 +85,8 @@ build-mac-arm64: $(SRCS) | $(BIN_DIR)
 	$(MAKE) $(BIN_DIR)/$(BINARY_NAME)_darwin_arm64
 
 .PHONY: image
-image: $(OUT_DIR)/image/index.json
-$(OUT_DIR)/image/index.json: $(OUT_DIR)/image Containerfile $(SRCS)
+image: $(IMAGE_DIR)/index.json
+$(OUT_DIR)/image/index.json: Containerfile $(IMAGE_DIR) $(SRCS)
 	docker \
 		buildx \
 		build \
@@ -101,7 +101,7 @@ $(OUT_DIR)/image/index.json: $(OUT_DIR)/image Containerfile $(SRCS)
 		--progress=$(PROGRESS) \
 		--sbom=true \
 		--provenance=true \
-		-f Containerfile \
+		-f $< \
 		. \
 		| tar -C $(IMAGE_DIR) -mx
 
@@ -112,20 +112,23 @@ load-image: image
 
 .PHONY: image-digests
 .ONESHELL:
-image-digests: $(IMAGE_DIR)/index.json
-	@cd $(IMAGE_DIR) && \
-	INDEX_DIGEST=$$(jq -r '.manifests[0].digest' index.json) && \
-	MANIFEST_FILE=$$(echo "$$INDEX_DIGEST" | sed 's/sha256://' | xargs -I {} find blobs/sha256 -name "{}" -type f) && \
+image-digests: $(OUT_DIR)/digests.txt
+$(OUT_DIR)/digests.txt: $(IMAGE_DIR)/index.json
+	@INDEX_DIGEST=$$(jq -r '.manifests[0].digest' $(IMAGE_DIR)/index.json) && \
+	MANIFEST_FILE=$$(echo "$$INDEX_DIGEST" | sed 's/sha256://' | xargs -I {} find $(IMAGE_DIR)/blobs/sha256 -name "{}" -type f) && \
 	if [ -n "$$MANIFEST_FILE" ]; then \
-		jq -r '.manifests[] | select(.annotations."vnd.docker.reference.type" != "attestation-manifest") | "\(.digest | sub("sha256:"; "")) \(.platform.os)/\(.platform.architecture)"' "$$MANIFEST_FILE" | sort; \
+		jq -r '.manifests[] | select(.annotations."vnd.docker.reference.type" != "attestation-manifest") | "\(.digest | sub("sha256:"; "")) \(.platform.os)/\(.platform.architecture)"' "$$MANIFEST_FILE" | sort > $@; \
 	else \
 		echo "Error: Could not find manifest file for $$INDEX_DIGEST"; \
+		exit 1; \
 	fi
 
 .PHONY: verify
 verify: all
-	@make all OUT_DIR=out2
-	@cmp $(IMAGE_DIR)/index.json out2/image/index.json
+	@$(MAKE) all OUT_DIR=out2
+	@$(MAKE) image-digests
+	@$(MAKE) image-digests OUT_DIR=out2
+	@cmp $(OUT_DIR)/digests.txt out2/digests.txt
 	@cmp $(BIN_DIR)/$(BINARY_NAME)_darwin_arm64 out2/bins/$(BINARY_NAME)_darwin_arm64
 	@cmp $(BIN_DIR)/$(BINARY_NAME)_darwin_amd64 out2/bins/$(BINARY_NAME)_darwin_amd64
 	@cmp $(BIN_DIR)/$(BINARY_NAME)_linux_armv7 out2/bins/$(BINARY_NAME)_linux_armv7
