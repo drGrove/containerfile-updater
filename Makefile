@@ -122,6 +122,27 @@ $(OUT_DIR)/digests.txt: $(IMAGE_DIR)/index.json
 		exit 1; \
 	fi
 
+.PHONY: github-digest-summary
+github-digest-summary:
+	@echo "## Digest Comparison"
+	@echo ""
+	@echo "| Digest 1 | Digest 2 | Match | Platform |"
+	@echo "|----------|----------|-------|----------|"
+	@while IFS=' ' read -r digest1 platform1; do \
+		digest2=$$(grep "^[^ ]* $$platform1$$" $(DIGESTS2) | cut -d' ' -f1 2>/dev/null || echo "N/A"); \
+		if [ "$$digest1" = "$$digest2" ] && [ "$$digest1" != "N/A" ]; then \
+			match="✅"; \
+		else \
+			match="❌"; \
+		fi; \
+		printf "| \`%s\` | \`%s\` | %s | %s |\n" "$$digest1" "$$digest2" "$$match" "$$platform1"; \
+	done < $(DIGESTS1); \
+	while IFS=' ' read -r digest2 platform2; do \
+		if ! grep -q "^[^ ]* $$platform2$$" $(DIGESTS1) 2>/dev/null; then \
+			printf "| \`N/A\` | \`%s\` | :x: | %s |\n" "$$digest2" "$$platform2"; \
+		fi; \
+	done < $(DIGESTS2)
+
 .PHONY: verify
 verify: all
 	@$(MAKE) all OUT_DIR=out2

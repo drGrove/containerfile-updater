@@ -79,6 +79,11 @@ jobs:
       build-verified: ${{ steps.compare.outputs.verified }}
 
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
     - name: Download build artifacts
       uses: actions/download-artifact@v4
       with:
@@ -108,6 +113,9 @@ jobs:
           exit 1
         fi
 
+        # Generate summary for Github Action
+        make github-digest-summary DIGESTS1=build-1/digests.txt DIGESTS2=build-2/digests.txt >> ${GITHUB_STEP_SUMMARY}
+
   publish:
     name: Publish to GHCR
     runs-on: ubuntu-latest
@@ -126,6 +134,17 @@ jobs:
         echo "IMAGE_NAME=${image_name}" >> ${GITHUB_ENV}
         echo "GHCR_IMAGE=${REGISTRY}/${image_name}" >> ${GITHUB_ENV}
         echo "VERSION=${{ needs.build.outputs.version }}" >> ${GITHUB_ENV}
+
+    - name: Add Reproduce command
+      run: |
+        echo "### Reproduce"
+        echo "\`\`\`shell" >> ${GITHUB_STEP_SUMMARY}
+        echo "git clone https://github.com/${{ github.repository }}" >> ${GITHUB_STEP_SUMMARY}
+        echo "git checkout ${{ github.sha }}" >> ${GITHUB_STEP_SUMMARY}
+        echo "make image REGISTRY=${REGISTRY} IMAGE_NAME=${IMAGE_NAME} NOCACHE=1" >> ${GITHUB_STEP_SUMMARY}
+        echo "make image-digests" >> ${GITHUB_STEP_SUMMARY}
+        echo "cat out/digests.txt" >> ${GITHUB_STEP_SUMMARY}
+        echo "\`\`\`" >> ${GITHUB_STEP_SUMMARY}
 
     - name: Download verified build artifact
       id: download
