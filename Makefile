@@ -124,7 +124,7 @@ $(OUT_DIR)/digests.txt: $(IMAGE_DIR)/index.json
 	fi
 
 .PHONY: show-image-digests
-show-image-digets: $(OUT_DIR)/digests.txt
+show-image-digests: $(OUT_DIR)/digests.txt
 	@cat $<
 
 .PHONY: github-digest-summary
