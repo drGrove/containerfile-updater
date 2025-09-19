@@ -41,7 +41,7 @@
       "schedule": ["before 6am"]
     },
     {
-      "matchPackageNames": ["docker/login-action", "docker/metadata-action", "docker/setup-buildx-action", "docker/build-push-action"],
+      "matchPackageNames": ["docker/*-action"],
       "groupName": "Docker Actions",
       "schedule": ["before 6am"]
     },
