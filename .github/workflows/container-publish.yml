@@ -84,7 +84,7 @@ jobs:
         fetch-depth: 0
 
     - name: Download build artifacts
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
       with:
         pattern: build-*
         merge-multiple: false
@@ -146,7 +146,7 @@ jobs:
 
     - name: Download verified build artifact
       id: download
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
       with:
         name: build-1
         path: verified-build
