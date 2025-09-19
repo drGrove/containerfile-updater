@@ -16,6 +16,7 @@ MOD_SRCS=$(shell find . -type f -name "go.mod" -o -name "go.sum" -not -path "*/\
 SRCS=$(GO_SRCS) $(MOD_SRCS)
 LICENSE_CODE=AGPL-3.0
 SOURCE_URL=https://github.com/drGrove/containerfile-updater
+DESCRIPTION='containerfile-updater - Upgrade FROM statements to the latest digest'
 
 export SOURCE_DATE_EPOCH
 export TZ=UTC
@@ -86,14 +87,14 @@ build-mac-arm64: $(SRCS) | $(BIN_DIR)
 
 .PHONY: image
 image: $(IMAGE_DIR)/index.json
-$(OUT_DIR)/image/index.json: Containerfile $(IMAGE_DIR) $(SRCS)
+$(IMAGE_DIR)/index.json: Containerfile COPYRIGHT $(IMAGE_DIR) $(SRCS)
 	docker \
 		buildx \
 		build \
 		--ulimit nofile=2048:16384 \
 		--tag $(REGISTRY)/$(IMAGE_NAME):$(VERSION) \
 		--output \
-			name=$(IMAGE_NAME),type=oci,rewrite-timestamp=true,force-compression=true,annotation.org.opencontainers.licenses=$(LICENSE_CODE),annotation.org.opencontainers.image.revision=$(shell git rev-list HEAD -1 .),annotation.org.opencontainers.source=$(SOURCE_URL),annotation.org.opencontainers.image.created=$(COMMIT_ISO),tar=true,dest=- \
+			name=$(IMAGE_NAME),type=oci,rewrite-timestamp=true,force-compression=true,annotation.org.opencontainers.licenses=$(LICENSE_CODE),annotation.org.opencontainers.image.revision=$(shell git rev-list HEAD -1 .),annotation.org.opencontainers.source=$(SOURCE_URL),annotation.org.opencontainers.image.created=$(COMMIT_ISO),annotation.org.opencontainers.description=$(DESCRIPTION),tar=true,dest=- \
 		$(EXTRA_ARGS) \
 		$(NOCACHE_FLAG) \
 		$(CHECK_FLAG) \
@@ -121,6 +122,10 @@ $(OUT_DIR)/digests.txt: $(IMAGE_DIR)/index.json
 		echo "Error: Could not find manifest file for $$INDEX_DIGEST"; \
 		exit 1; \
 	fi
+
+.PHONY: show-image-digests
+show-image-digets: $(OUT_DIR)/digests.txt
+	@cat $<
 
 .PHONY: github-digest-summary
 github-digest-summary:

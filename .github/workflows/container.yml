@@ -60,9 +60,8 @@ jobs:
 
     - name: Generate image digests
       run: |
-        make image-digests
         echo "Build ${{ matrix.build-id }} digests:"
-        cat "${OUT_DIR}/digests.txt"
+        make show-image-digests
 
     - name: Upload build artifact
       uses: actions/upload-artifact@v4
@@ -142,8 +141,7 @@ jobs:
         echo "git clone https://github.com/${{ github.repository }}" >> ${GITHUB_STEP_SUMMARY}
         echo "git checkout ${{ github.sha }}" >> ${GITHUB_STEP_SUMMARY}
         echo "make image REGISTRY=${REGISTRY} IMAGE_NAME=${IMAGE_NAME} NOCACHE=1" >> ${GITHUB_STEP_SUMMARY}
-        echo "make image-digests" >> ${GITHUB_STEP_SUMMARY}
-        echo "cat out/digests.txt" >> ${GITHUB_STEP_SUMMARY}
+        echo "make show-image-digets" >> ${GITHUB_STEP_SUMMARY}
         echo "\`\`\`" >> ${GITHUB_STEP_SUMMARY}
 
     - name: Download verified build artifact
