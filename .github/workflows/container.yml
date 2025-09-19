@@ -1,9 +1,9 @@
-name: Build and Publish Container
+name: Test Container Build and Reproducibliity
 
 on:
-  push:
-    branches: [ main ]
-    tags: [ 'v*' ]
+  pull_request:
+    branches:
+      - main
 
 env:
   REGISTRY: ghcr.io
@@ -114,94 +114,3 @@ jobs:
 
         # Generate summary for Github Action
         make github-digest-summary DIGESTS1=build-1/digests.txt DIGESTS2=build-2/digests.txt >> ${GITHUB_STEP_SUMMARY}
-
-  publish:
-    name: Publish to GHCR
-    runs-on: ubuntu-latest
-    needs: [build, verify]
-    if: needs.verify.outputs.build-verified == 'true' && (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'release'
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-
-    steps:
-    - name: Set Image name
-      run: |
-        image_name=${GITHUB_REPOSITORY,,}
-        echo "IMAGE_NAME=${image_name}" >> ${GITHUB_ENV}
-        echo "GHCR_IMAGE=${REGISTRY}/${image_name}" >> ${GITHUB_ENV}
-        echo "VERSION=${{ needs.build.outputs.version }}" >> ${GITHUB_ENV}
-
-    - name: Add Reproduce command
-      run: |
-        echo "### Reproduce"
-        echo "\`\`\`shell" >> ${GITHUB_STEP_SUMMARY}
-        echo "git clone https://github.com/${{ github.repository }}" >> ${GITHUB_STEP_SUMMARY}
-        echo "git checkout ${{ github.sha }}" >> ${GITHUB_STEP_SUMMARY}
-        echo "make image REGISTRY=${REGISTRY} IMAGE_NAME=${IMAGE_NAME} NOCACHE=1" >> ${GITHUB_STEP_SUMMARY}
-        echo "make show-image-digests" >> ${GITHUB_STEP_SUMMARY}
-        echo "\`\`\`" >> ${GITHUB_STEP_SUMMARY}
-
-    - name: Download verified build artifact
-      id: download
-      uses: actions/download-artifact@v4
-      with:
-        name: build-1
-        path: verified-build
-
-    - name: Setup Docker
-      uses: docker/setup-docker-action@v4
-      with:
-        daemon-config: |
-          {
-            "debug": true,
-            "features": {
-              "containerd-snapshotter": true
-            }
-          }
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Log in to Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Show verified build tree
-      run: |
-        tree verified-build
-
-    - name: Load Verified image
-      run: |
-        tar -C verified-build/image -cf - . | docker load
-
-    - name: Tag and push to GHCR
-      run: |
-        # Tag the loaded image for GHCR
-        docker tag "${GHCR_IMAGE}" "${GHCR_IMAGE}:${VERSION}"
-
-        # Push versioned tag
-        docker push "${GHCR_IMAGE}:${VERSION}"
-
-        # Push latest tag for main branch 
-        if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-          docker push "${GHCR_IMAGE}"
-        fi
-
-    - name: Get attestation metadata
-      id: attestation_metadata
-      run: |
-        echo "digest=$(jq -r '.manifests[0].digest' verified-build/image/index.json)" >> $GITHUB_OUTPUT
-        echo "provenance-subject=${GHCR_IMAGE}" >> $GITHUB_OUTPUT
-
-    - name: Generate multi-platform attestations
-      uses: actions/attest-build-provenance@v2.4.0
-      with:
-        subject-name: ${{ steps.attestation_metadata.outputs.provenance-subject }}
-        subject-digest: ${{ steps.attestation_metadata.outputs.digest }}
-        push-to-registry: true
