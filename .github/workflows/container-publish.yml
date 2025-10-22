@@ -31,7 +31,7 @@ jobs:
         echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
 
     - name: Setup Docker
-      uses: docker/setup-docker-action@b60f85385d03ac8acfca6d9996982511d8620a19 # v4
+      uses: docker/setup-docker-action@3fb92d6d9c634363128c8cce4bc3b2826526370a # v4
       with:
         daemon-config: |
           {
@@ -152,7 +152,7 @@ jobs:
         path: verified-build
 
     - name: Setup Docker
-      uses: docker/setup-docker-action@b60f85385d03ac8acfca6d9996982511d8620a19 # v4
+      uses: docker/setup-docker-action@3fb92d6d9c634363128c8cce4bc3b2826526370a # v4
       with:
         daemon-config: |
           {
@@ -166,7 +166,7 @@ jobs:
       uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3
 
     - name: Log in to Container Registry
-      uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3
+      uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
