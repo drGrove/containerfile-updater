@@ -1,5 +1,5 @@
-# syntax=docker/dockerfile@sha256:b6afd42430b15f2d2a4c5a02b919e98a525b785b1aaff16747d2f623364e39b6
-FROM --platform=amd64 stagex/pallet-go@sha256:5477bcf690aa52d1afdd2ed4ed0e6cc661cabf028a93ac639106b2ad06d7fa9a AS pallet-go
+# syntax=docker/dockerfile@sha256:572cebbc2b15e6f84c077742952674889cb63cd5e9b80abdffcbe587b6f19183
+FROM --platform=amd64 stagex/pallet-go@sha256:d93bfdee5b75f634e4c14a0a80593d47e4fb22ab8fd8ddce6bf8b3cff49ba602 AS pallet-go
 
 FROM pallet-go AS build
 ARG TARGETOS
